@@ -41,7 +41,7 @@ export interface Effect {
 	utterOptions: UtterOptions
 }
 
-class Recognition {
+class Recognitioner {
 	speech: SpeechSynthesis = window.speechSynthesis
 	effects: Effect[] = []
 	utter: SpeechSynthesisUtterance | null = null
@@ -56,7 +56,7 @@ class Recognition {
 		volume: 1
 	}
 
-	constructor(options: SpeechOptions) {
+	constructor(options: Partial<SpeechOptions> = {}) {
 		if (!inBrowser) return
 		if (typeof window.speechSynthesis === 'undefined') {
 			console.error('speechSynthesis is not supported')
@@ -69,7 +69,7 @@ class Recognition {
 		!this.ready && promises.push(this.init())
 		!this.voice && promises.push(this.getVoice())
 		Promise.all(promises).then(() => {
-			this.speaking()
+			this.recognitioning()
 		})
 	}
 
@@ -84,8 +84,8 @@ class Recognition {
 
 		return new Promise((resolve, reject) => {
 			const handler = () => {
-				this.speech.speak(new SpeechSynthesisUtterance(''))
-				this.ready = window.graceRecognitionReady = this.speech.speaking || this.speech.pending
+				this.speech.recognition(new SpeechSynthesisUtterance(''))
+				this.ready = window.graceRecognitionReady = this.speech.recognitioning || this.speech.pending
 				window.removeEventListener('click', handler)
 				window.removeEventListener('keypress', handler)
 				if (this.ready) resolve(true)
@@ -138,29 +138,29 @@ class Recognition {
 	}
 
 	/**
-	 * speak
+	 * recognition
 	 *
-	 * @param content - speak text
+	 * @param content - recognition text
 	 * @param utterOptions - utter options: UtterOptions
 	 * @returns result - effectKey: symbol
 	 */
-	public speak(content: string, utterOptions: UtterOptions = {}): Effect['key'] {
+	public recognition(content: string, utterOptions: UtterOptions = {}): Effect['key'] {
 		const effect = {
 			key: Symbol('SpeechKey#effect'),
 			content,
 			utterOptions
 		}
-		this.effects = ([] as Effect[]).concat(this.effects, effect)
+		this.effects.push(effect)
 
-		this.speaking()
+		this.recognitioning()
 
 		return effect.key
 	}
 
 	/**
-	 * do speaking
+	 * do recognitioning
 	 */
-	speaking() {
+	recognitioning() {
 		if (!this.ready || !this.voice) return
 		for (const { content, utterOptions } of this.effects) {
 			this.utter = new SpeechSynthesisUtterance(content)
@@ -172,24 +172,22 @@ class Recognition {
 			this.utter.pitch = this.options.pitch
 			this.utter.rate = this.options.rate
 			this.utter.volume = this.options.volume
-			this.speech.speak(this.utter)
+			this.speech.recognition(this.utter)
 		}
 		this.effects = []
 		this.utter = null
 	}
 
 	/**
-	 * Remove unconsumed speak
+	 * Remove unconsumed recognition
 	 *
 	 * @param effectKey - key of effect
 	 * @returns result - cancellation result true=Cancellation success false=Broadcast content not found or broadcast consumed
 	 */
 	public remove(effectKey: Effect['key']): boolean {
-		const _effects = ([] as Effect[]).concat(this.effects)
-		const index = _effects.findIndex(({ key }) => key === effectKey)
+		const index = this.effects.findIndex(({ key }) => key === effectKey)
 		if (index > -1) {
-			_effects.splice(index, 1)
-			this.effects = _effects
+			this.effects.splice(index, 1)
 			return true
 		}
 		return false
@@ -217,4 +215,4 @@ class Recognition {
 	}
 }
 
-export { Recognition as default }
+export { Recognitioner as default }

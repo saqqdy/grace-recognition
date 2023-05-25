@@ -42,8 +42,8 @@ import Recognition from 'grace-recognition'
 
 const Recognition = new Recognition()
 
-Recognition.speak('very good')
-Recognition.speak('powered by saqqdy<https://github.com/saqqdy>')
+Recognition.recognition('very good')
+Recognition.recognition('powered by saqqdy<https://github.com/saqqdy>')
 ```
 
 2. Using unpkg CDN:

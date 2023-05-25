@@ -1,139 +1,155 @@
-import type { RollupOptions } from 'rollup'
+import type { InternalModuleFormat, OutputOptions, Plugin, RollupOptions } from 'rollup'
 import nodeResolve from '@rollup/plugin-node-resolve'
 import babel from '@rollup/plugin-babel'
 import commonjs from '@rollup/plugin-commonjs'
-import terser from '@rollup/plugin-terser'
 import cleanup from 'rollup-plugin-cleanup'
+import terser from '@rollup/plugin-terser'
 import typescript from '@rollup/plugin-typescript'
-import alias, { type ResolverObject } from '@rollup/plugin-alias'
 import filesize from 'rollup-plugin-filesize'
 import { visualizer } from 'rollup-plugin-visualizer'
-import pkg from '../package.json' assert { type: 'json' }
 import { banner, extensions, reporter } from './config'
 
-const nodeResolver = nodeResolve({
-	// Use the `package.json` "browser" field
-	browser: false,
-	extensions,
-	preferBuiltins: true,
-	exportConditions: ['node'],
-	moduleDirectories: ['node_modules']
-})
-const iifeGlobals = {}
+export interface Config {
+	input: string
+	file: string
+	format: InternalModuleFormat
+	browser?: boolean
+	minify?: boolean
+	transpile?: boolean
+	env: 'development' | 'production'
+	plugins?: Plugin[]
+}
 
-const options: RollupOptions = {
-	plugins: [
-		alias({
-			customResolver: nodeResolver as ResolverObject,
-			entries: [
-				// {
-				//     find: /^#lib(.+)$/,
-				//     replacement: resolve(__dirname, '..', 'src', '$1.mjs')
-				// }
-			]
-		}),
-		nodeResolver,
-		babel({
-			babelHelpers: 'bundled',
-			extensions,
-			exclude: [/node_modules[\\/]core-js/]
-		}),
-		commonjs({
-			sourceMap: false,
-			exclude: ['core-js']
-		}),
-		typescript({
-			compilerOptions: {
-				outDir: undefined,
-				declaration: false,
-				declarationDir: undefined,
-				target: 'es5'
+export interface Output extends OutputOptions {
+	plugins: Plugin[]
+}
+
+export interface Options extends RollupOptions {
+	external: string[]
+	plugins: Plugin[]
+	output: Output
+}
+
+const configs: Config[] = [
+	{
+		input: 'src/index.ts',
+		file: 'dist/index.esm-browser.js',
+		format: 'es',
+		browser: true,
+		env: 'development'
+	},
+	{
+		input: 'src/index.ts',
+		file: 'dist/index.esm-browser.prod.js',
+		format: 'es',
+		browser: true,
+		minify: true,
+		env: 'production'
+	},
+	{
+		input: 'src/index.ts',
+		file: 'dist/index.esm-bundler.js',
+		format: 'es',
+		env: 'development'
+	},
+	{
+		input: 'src/index.ts',
+		file: 'dist/index.mjs',
+		format: 'es',
+		env: 'development'
+	},
+	{
+		input: 'src/index.ts',
+		file: 'dist/index.global.js',
+		format: 'iife',
+		env: 'development'
+	},
+	{
+		input: 'src/index.ts',
+		file: 'dist/index.global.prod.js',
+		format: 'iife',
+		minify: true,
+		env: 'production'
+	},
+	{
+		input: 'src/index.ts',
+		file: 'dist/index.cjs.js',
+		format: 'cjs',
+		env: 'development'
+	}
+]
+
+function createEntries() {
+	return configs.map(createEntry)
+}
+
+function createEntry(config: Config) {
+	const isGlobalBuild = config.format === 'iife'
+	const isTypeScript = config.input.endsWith('.ts')
+
+	const _config: Options = {
+		external: [],
+		input: config.input,
+		plugins: [],
+		output: {
+			file: config.file,
+			format: config.format,
+			exports: 'auto',
+			sourcemap: false,
+			extend: true,
+			plugins: [],
+			globals: {}
+		},
+		onwarn: (msg: any, warn) => {
+			if (!/Circular/.test(msg)) {
+				warn(msg)
 			}
+		}
+	}
+
+	if (isGlobalBuild || config.browser) _config.output.banner = banner
+
+	if (isGlobalBuild) {
+		_config.output.name = _config.output.name || 'GraceRecognition'
+	}
+
+	if (!isGlobalBuild) {
+		_config.external.push('core-js', 'js-cool')
+	}
+
+	_config.plugins.push(nodeResolve(), commonjs())
+
+	if (config.transpile !== false) {
+		_config.plugins.push(
+			babel({
+				babelHelpers: 'bundled',
+				extensions,
+				exclude: [/node_modules[\\/]core-js/]
+			})
+		)
+		isTypeScript &&
+			_config.plugins.push(
+				typescript({
+					compilerOptions: {
+						declaration: false
+					}
+				})
+			)
+	}
+
+	if (config.minify) {
+		_config.plugins.push(terser({ module: config.format === 'es' }))
+	}
+
+	_config.plugins.push(
+		cleanup({
+			comments: 'all'
 		}),
 		filesize({ reporter }),
 		visualizer()
-	]
+	)
+
+	return _config
 }
 
-function externalCjsEsm(id: string) {
-	return ['core-js', '@babel/runtime'].some(k => new RegExp('^' + k).test(id))
-}
-
-const distDir = (path: string) =>
-	process.env.BABEL_ENV === 'es5' ? path.replace('index', 'es5/index') : path
-
-export default (process.env.BABEL_ENV !== 'es5'
-	? ([
-			{
-				input: 'src/index.ts',
-				output: [
-					{
-						file: pkg.main,
-						exports: 'auto',
-						format: 'cjs'
-					},
-					{
-						file: pkg.module,
-						exports: 'auto',
-						format: 'es'
-					}
-				],
-				external: externalCjsEsm,
-				...options
-			}
-	  ] as RollupOptions[])
-	: ([
-			{
-				input: pkg.module,
-				output: [
-					{
-						file: distDir(pkg.main),
-						exports: 'auto',
-						format: 'cjs'
-					},
-					{
-						file: distDir(pkg.module),
-						exports: 'auto',
-						format: 'es'
-					}
-				],
-				external: externalCjsEsm,
-				...options
-			}
-	  ] as RollupOptions[])
-).concat([
-	{
-		input: distDir(pkg.main),
-		output: [
-			{
-				file: distDir('dist/index.iife.js'),
-				format: 'iife',
-				name: 'graceRecognition',
-				extend: true,
-				globals: iifeGlobals,
-				banner
-			},
-			{
-				file: distDir(pkg.unpkg),
-				format: 'iife',
-				name: 'graceRecognition',
-				extend: true,
-				globals: iifeGlobals,
-				banner,
-				plugins: [terser()]
-			}
-		],
-		plugins: [
-			nodeResolver,
-			commonjs({
-				sourceMap: false,
-				exclude: ['core-js']
-			}),
-			cleanup({
-				comments: 'all'
-			}),
-			filesize({ reporter }),
-			visualizer()
-		]
-	}
-])
+export default createEntries()
