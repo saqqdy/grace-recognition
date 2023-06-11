@@ -1,76 +1,67 @@
-import { extend } from 'js-cool'
-import { inBrowser, isChrome } from './utils'
+import { inBrowser } from 'js-cool'
+import { isChrome } from './utils'
 
 declare global {
 	interface Window {
 		graceRecognitionReady: boolean
+		SpeechRecognition: SpeechRecognition
+		webkitSpeechRecognition: SpeechRecognition
 	}
 }
 
-export interface SpeechOptions {
+export interface RecognitionOptions {
 	preferTouchEvent: boolean
-	voiceFilter: ((voice: SpeechSynthesisVoice) => boolean) | null
 	lang: 'zh-CN' | string
-	pitch: number
-	rate: number
-	volume: number
+	interimResults: boolean
+	maxAlternatives: number
+	continuous: boolean
 }
 
-export type UtterOptions = Partial<
-	Pick<
-		SpeechSynthesisUtterance,
-		| 'lang'
-		| 'onboundary'
-		| 'onend'
-		| 'onerror'
-		| 'onmark'
-		| 'onpause'
-		| 'onresume'
-		| 'onstart'
-		| 'pitch'
-		| 'rate'
-		| 'text'
-		| 'voice'
-		| 'volume'
-	>
->
-
-export interface Effect {
-	key: symbol
-	content: string
-	utterOptions: UtterOptions
-}
+export type RecognitionEventType =
+	| 'start'
+	| 'audiostart'
+	| 'soundstart'
+	| 'speechstart'
+	| 'result'
+	| 'speechend'
+	| 'soundend'
+	| 'audioend'
+	| 'end'
 
 class Recognition {
-	speech: SpeechSynthesis = window.speechSynthesis
-	effects: Effect[] = []
-	utter: SpeechSynthesisUtterance | null = null
-	voice: SpeechSynthesisVoice | undefined = undefined
+	recognition: SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
 	ready: boolean = window.graceRecognitionReady ?? false
-	options: SpeechOptions = {
+	result = ''
+	status: RecognitionEventType = 'end'
+
+	options: RecognitionOptions = {
 		preferTouchEvent: false,
-		voiceFilter: null,
 		lang: 'zh-CN',
-		pitch: 1,
-		rate: 1,
-		volume: 1
+		interimResults: false,
+		maxAlternatives: 1,
+		continuous: false
 	}
 
-	constructor(options: SpeechOptions) {
+	constructor(options: RecognitionOptions) {
 		if (!inBrowser) return
-		if (typeof window.speechSynthesis === 'undefined') {
-			console.error('speechSynthesis is not supported')
-			return
+		if (
+			typeof window.SpeechRecognition === 'undefined' ||
+			typeof window.webkitSpeechRecognition === 'undefined'
+		) {
+			console.error('SpeechRecognition is not supported')
 		}
 
-		this.options = extend(true, this.options, options) as unknown as SpeechOptions
+		this.options = Object.assign(this.options, options || {})
+		this.recognition.lang = this.options.lang
+		this.recognition.interimResults = this.options.interimResults
+		this.recognition.maxAlternatives = this.options.maxAlternatives
+		this.recognition.continuous = this.options.continuous
+
+		this.bindHandler()
 
 		const promises = []
 		!this.ready && promises.push(this.init())
-		!this.voice && promises.push(this.getVoice())
-		Promise.all(promises).then(() => {
-			this.speaking()
-		})
+		Promise.all(promises)
 	}
 
 	/**
@@ -82,138 +73,117 @@ class Recognition {
 			return Promise.resolve(true)
 		}
 
-		return new Promise((resolve, reject) => {
-			const handler = () => {
-				this.speech.speak(new SpeechSynthesisUtterance(''))
-				this.ready = window.graceRecognitionReady = this.speech.speaking || this.speech.pending
-				window.removeEventListener('click', handler)
-				window.removeEventListener('keypress', handler)
-				if (this.ready) resolve(true)
-				else reject(new Error('init error'))
+		return new Promise(resolve => {
+			const eventName = this.options.preferTouchEvent ? 'touchend' : 'click'
+			const handler = (
+				event:
+					| MouseEvent
+					| TouchEvent
+					| CompositionEvent
+					| FocusEvent
+					| InputEvent
+					| KeyboardEvent
+			) => {
+				this.ready = window.graceRecognitionReady = event.isTrusted
+				if (this.ready) {
+					window.removeEventListener(eventName, handler)
+					window.removeEventListener('keypress', handler)
+					resolve(true)
+				}
 			}
-			window.addEventListener('click', handler)
+			window.addEventListener(eventName, handler)
 			window.addEventListener('keypress', handler)
 		})
 	}
 
 	/**
-	 * get voice
-	 *
-	 * @returns result voice: SpeechSynthesisVoice
+	 * bind handler
 	 */
-	public async getVoice(): Promise<SpeechSynthesisVoice | undefined> {
-		if (this.voice) return this.voice
-
-		let voices = this.speech.getVoices()
-		if (!voices || !voices.length) {
-			await new Promise(resolve =>
-				this.speech.addEventListener('voiceschanged', resolve, { once: true })
-			)
-			voices = this.speech.getVoices()
+	public bindHandler() {
+		this.recognition.onresult = event => {
+			this.status = event.type as RecognitionEventType
+			console.log(103, 'onresult', event)
+			const result = ([] as any)
+				.concat(event.results)
+				.map((item: any) => item[0].transcript)
+				.join('|') // event.results[0][0].transcript;
+			this.result = result
 		}
 
-		voices = voices.sort((a, b) => {
-			const nameA = a.name.toUpperCase()
-			const nameB = b.name.toUpperCase()
-			if (nameA < nameB) return -1
-			else if (nameA === nameB) return 0
-			return 1
-		})
-
-		this.voice = this.options.voiceFilter
-			? voices.find(this.options.voiceFilter)
-			: voices.find(({ lang, localService }) => localService && lang === this.options.lang) ||
-			  voices.find(({ lang }) => lang === this.options.lang)
-		return this.voice
-	}
-
-	/**
-	 * get current utter
-	 *
-	 * @returns result - utter: SpeechSynthesisUtterance
-	 */
-	public getCurrentUtter(): SpeechSynthesisUtterance | null {
-		if (!this.utter) console.warn('no utter right now')
-		return this.utter
-	}
-
-	/**
-	 * speak
-	 *
-	 * @param content - speak text
-	 * @param utterOptions - utter options: UtterOptions
-	 * @returns result - effectKey: symbol
-	 */
-	public speak(content: string, utterOptions: UtterOptions = {}): Effect['key'] {
-		const effect = {
-			key: Symbol('SpeechKey#effect'),
-			content,
-			utterOptions
+		this.recognition.onspeechend = event => {
+			this.status = event.type as RecognitionEventType
+			console.log(102, 'onspeechend', event)
+			// this.recognition.stop();
 		}
-		this.effects = ([] as Effect[]).concat(this.effects, effect)
 
-		this.speaking()
-
-		return effect.key
-	}
-
-	/**
-	 * do speaking
-	 */
-	speaking() {
-		if (!this.ready || !this.voice) return
-		for (const { content, utterOptions } of this.effects) {
-			this.utter = new SpeechSynthesisUtterance(content)
-			let action: keyof UtterOptions
-			for (action in utterOptions) {
-				this.utter[action] = utterOptions[action] as never
-			}
-			this.utter.voice = this.voice
-			this.utter.pitch = this.options.pitch
-			this.utter.rate = this.options.rate
-			this.utter.volume = this.options.volume
-			this.speech.speak(this.utter)
+		this.recognition.onnomatch = event => {
+			this.status = event.type as RecognitionEventType
+			console.log(101, 'onnomatch', event)
 		}
-		this.effects = []
-		this.utter = null
+
+		this.recognition.onerror = event => {
+			this.status = event.type as RecognitionEventType
+			console.log(100, 'onerror', event, event.error)
+		}
+		this.recognition.onaudioend = event => {
+			this.status = event.type as RecognitionEventType
+			console.log(104, 'onaudioend', event)
+		}
+		this.recognition.onaudiostart = event => {
+			this.status = event.type as RecognitionEventType
+			console.log(105, 'onaudiostart', event)
+		}
+		this.recognition.onend = event => {
+			this.status = event.type as RecognitionEventType
+			console.log(106, 'onend', event)
+		}
+		this.recognition.onsoundend = event => {
+			this.status = event.type as RecognitionEventType
+			console.log(107, 'onsoundend', event)
+		}
+		this.recognition.onsoundstart = event => {
+			this.status = event.type as RecognitionEventType
+			console.log(108, 'onsoundstart', event)
+		}
+		this.recognition.onspeechstart = event => {
+			this.status = event.type as RecognitionEventType
+			console.log(109, 'onspeechstart', event)
+		}
+		this.recognition.onstart = event => {
+			this.status = event.type as RecognitionEventType
+			console.log(110, 'onstart', event)
+		}
 	}
 
 	/**
-	 * Remove unconsumed speak
+	 * get current recognition
 	 *
-	 * @param effectKey - key of effect
-	 * @returns result - cancellation result true=Cancellation success false=Broadcast content not found or broadcast consumed
+	 * @returns result - recognition: SpeechRecognition
 	 */
-	public remove(effectKey: Effect['key']): boolean {
-		const _effects = ([] as Effect[]).concat(this.effects)
-		const index = _effects.findIndex(({ key }) => key === effectKey)
-		if (index > -1) {
-			_effects.splice(index, 1)
-			this.effects = _effects
-			return true
-		}
-		return false
+	// public getCurrentRecognition(): SpeechRecognition | null {
+	// 	if (!this.recognition) console.warn('no recognition right now')
+	// 	return this.recognition
+	// }
+
+	/**
+	 * Starts the speech recognition service listening to incoming audio with intent to recognize grammars associated with the current SpeechRecognition.
+	 */
+	public start() {
+		this.recognition.start()
 	}
 
 	/**
-	 * Forced cancellation of all broadcasts, and immediate cancellation of those being broadcast
+	 * Stops the speech recognition service from listening to incoming audio, and doesn't attempt to return a SpeechRecognitionResult.
 	 */
-	public cancel() {
-		this.speech.cancel()
+	public abort() {
+		this.recognition.abort()
 	}
 
 	/**
-	 * Suspension of all broadcasts and immediate cancellation of those being broadcast
+	 * Stops the speech recognition service from listening to incoming audio, and attempts to return a SpeechRecognitionResult using the audio captured so far.
 	 */
-	public pause() {
-		this.speech.pause()
-	}
-
-	/**
-	 * Resume all broadcasts and immediately cancel those being broadcast
-	 */
-	public resume() {
-		this.speech.resume()
+	public stop() {
+		this.recognition.stop()
 	}
 }
 
