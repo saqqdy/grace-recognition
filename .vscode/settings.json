@@ -1,11 +1,18 @@
 {
 	"cSpell.words": [
+		"audioend",
+		"audiostart",
 		"demi",
 		"filesize",
 		"iife",
+		"nomatch",
 		"onwarn",
 		"reinstaller",
 		"saqqdy",
+		"soundend",
+		"soundstart",
+		"speechend",
+		"speechstart",
 		"tscjs",
 		"tsnd",
 		"unpub",

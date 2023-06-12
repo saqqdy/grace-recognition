@@ -30,7 +30,7 @@ export interface RecognitionOptions {
 	continuous: boolean
 	onStatusChange?: (
 		status: RecognitionEventType,
-		event?: Event | SpeechRecognitionEvent | SpeechRecognitionErrorEvent
+		event: Event | SpeechRecognitionEvent | SpeechRecognitionErrorEvent
 	) => void
 }
 

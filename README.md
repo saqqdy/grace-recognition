@@ -16,7 +16,7 @@ A composition api for SpeechSynthesis
 
 <div style="text-align: center; margin-bottom: 20px;" align="center">
 
-## **For API documentation, see: [API Docs](./docs/modules.md)**
+### **[Documentation](https://www.saqqdy.com/grace-recognition)** • **[Change Log](./CHANGELOG.md)**
 
 </div>
 
@@ -38,26 +38,52 @@ $ yarn add grace-recognition
 1. Simple use:
 
 ```ts
-import Recognition from 'grace-recognition'
+export type RecognitionEventType =
+  | 'start'
+  | 'audiostart'
+  | 'soundstart'
+  | 'speechstart'
+  | 'result'
+  | 'speechend'
+  | 'soundend'
+  | 'audioend'
+  | 'end'
+  | 'error'
+  | 'nomatch'
 
-const Recognition = new Recognition()
+export interface RecognitionOptions {
+  preferTouchEvent: boolean
+  lang: 'zh-CN' | string
+  interimResults: boolean
+  maxAlternatives: number
+  continuous: boolean
+  onStatusChange?: (
+    status: RecognitionEventType,
+    event: Event | SpeechRecognitionEvent | SpeechRecognitionErrorEvent
+  ) => void
+}
 
-Recognition.recognition('very good')
-Recognition.recognition('powered by saqqdy<https://github.com/saqqdy>')
+import GraceRecognition from 'grace-recognition'
+
+const recognition = new GraceRecognition({
+  continuous: true,
+  onStatusChange: (
+    status: RecognitionEventType,
+    event: Event | SpeechRecognitionEvent | SpeechRecognitionErrorEvent
+  ) => {}
+})
+
+recognition.start('very good')
+recognition.recognition('powered by saqqdy<https://github.com/saqqdy>')
 ```
 
 2. Using unpkg CDN:
 
 ```html
-<!-- for modern browser -->
-<head>
-  <script src="https://unpkg.com/grace-recognition/dist/index.min.js"></script>
-</head>
-
-<!-- for ie11 and blow -->
-<head>
-  <script src="https://unpkg.com/grace-recognition/dist/es5/index.min.js"></script>
-</head>
+<script src="https://unpkg.com/grace-recognition/1.0.0/dist/index.global.prod.js"></script>
+<script>
+  const recognition = new GraceRecognition()
+</script>
 ```
 
 ## Support & Issues
