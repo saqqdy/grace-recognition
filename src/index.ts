@@ -28,7 +28,10 @@ export interface RecognitionOptions {
 	interimResults: boolean
 	maxAlternatives: number
 	continuous: boolean
-	onStatusChange?: (status: RecognitionEventType, event?: Event) => void
+	onStatusChange?: (
+		status: RecognitionEventType,
+		event?: Event | SpeechRecognitionEvent | SpeechRecognitionErrorEvent
+	) => void
 }
 
 class Recognition {
@@ -109,22 +112,19 @@ class Recognition {
 			this.status = event.type as RecognitionEventType
 			const result = ([] as any)
 				.concat(event.results)
-				.map((item: any) => item[0].transcript)
+				.map((item: SpeechRecognitionResult) => item[0].transcript)
 				.join('|') // event.results[0][0].transcript;
 			this.result = result
 			this.options.onStatusChange && this.options.onStatusChange('result', event)
 		}
-
 		this.recognition.onspeechend = (event: Event) => {
 			this.status = event.type as RecognitionEventType
 			this.options.onStatusChange && this.options.onStatusChange('speechend', event)
 		}
-
 		this.recognition.onnomatch = (event: SpeechRecognitionEvent) => {
 			this.status = event.type as RecognitionEventType
 			this.options.onStatusChange && this.options.onStatusChange('nomatch', event)
 		}
-
 		this.recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
 			this.status = event.type as RecognitionEventType
 			this.options.onStatusChange && this.options.onStatusChange('error', event)
