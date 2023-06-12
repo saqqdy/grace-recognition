@@ -9,14 +9,6 @@ declare global {
 	}
 }
 
-export interface RecognitionOptions {
-	preferTouchEvent: boolean
-	lang: 'zh-CN' | string
-	interimResults: boolean
-	maxAlternatives: number
-	continuous: boolean
-}
-
 export type RecognitionEventType =
 	| 'start'
 	| 'audiostart'
@@ -27,9 +19,20 @@ export type RecognitionEventType =
 	| 'soundend'
 	| 'audioend'
 	| 'end'
+	| 'error'
+	| 'nomatch'
+
+export interface RecognitionOptions {
+	preferTouchEvent: boolean
+	lang: 'zh-CN' | string
+	interimResults: boolean
+	maxAlternatives: number
+	continuous: boolean
+	onStatusChange?: (status: RecognitionEventType, event?: Event) => void
+}
 
 class Recognition {
-	recognition: SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+	recognition: SpeechRecognition = null as unknown as SpeechRecognition
 	ready: boolean = window.graceRecognitionReady ?? false
 	result = ''
 	status: RecognitionEventType = 'end'
@@ -44,11 +47,13 @@ class Recognition {
 
 	constructor(options: RecognitionOptions) {
 		if (!inBrowser) return
-		if (
-			typeof window.SpeechRecognition === 'undefined' ||
-			typeof window.webkitSpeechRecognition === 'undefined'
-		) {
+		if (typeof window.SpeechRecognition !== 'undefined') {
+			this.recognition = new SpeechRecognition()
+		} else if (typeof window.webkitSpeechRecognition !== 'undefined') {
+			this.recognition = new webkitSpeechRecognition()
+		} else {
 			console.error('SpeechRecognition is not supported')
+			return
 		}
 
 		this.options = Object.assign(this.options, options || {})
@@ -100,70 +105,59 @@ class Recognition {
 	 * bind handler
 	 */
 	public bindHandler() {
-		this.recognition.onresult = event => {
+		this.recognition.onresult = (event: SpeechRecognitionEvent) => {
 			this.status = event.type as RecognitionEventType
-			console.log(103, 'onresult', event)
 			const result = ([] as any)
 				.concat(event.results)
 				.map((item: any) => item[0].transcript)
 				.join('|') // event.results[0][0].transcript;
 			this.result = result
+			this.options.onStatusChange && this.options.onStatusChange('result', event)
 		}
 
-		this.recognition.onspeechend = event => {
+		this.recognition.onspeechend = (event: Event) => {
 			this.status = event.type as RecognitionEventType
-			console.log(102, 'onspeechend', event)
-			// this.recognition.stop();
+			this.options.onStatusChange && this.options.onStatusChange('speechend', event)
 		}
 
-		this.recognition.onnomatch = event => {
+		this.recognition.onnomatch = (event: SpeechRecognitionEvent) => {
 			this.status = event.type as RecognitionEventType
-			console.log(101, 'onnomatch', event)
+			this.options.onStatusChange && this.options.onStatusChange('nomatch', event)
 		}
 
-		this.recognition.onerror = event => {
+		this.recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
 			this.status = event.type as RecognitionEventType
-			console.log(100, 'onerror', event, event.error)
+			this.options.onStatusChange && this.options.onStatusChange('error', event)
 		}
-		this.recognition.onaudioend = event => {
+		this.recognition.onaudioend = (event: Event) => {
 			this.status = event.type as RecognitionEventType
-			console.log(104, 'onaudioend', event)
+			this.options.onStatusChange && this.options.onStatusChange('audioend', event)
 		}
-		this.recognition.onaudiostart = event => {
+		this.recognition.onaudiostart = (event: Event) => {
 			this.status = event.type as RecognitionEventType
-			console.log(105, 'onaudiostart', event)
+			this.options.onStatusChange && this.options.onStatusChange('audiostart', event)
 		}
-		this.recognition.onend = event => {
+		this.recognition.onend = (event: Event) => {
 			this.status = event.type as RecognitionEventType
-			console.log(106, 'onend', event)
+			this.options.onStatusChange && this.options.onStatusChange('end', event)
 		}
-		this.recognition.onsoundend = event => {
+		this.recognition.onsoundend = (event: Event) => {
 			this.status = event.type as RecognitionEventType
-			console.log(107, 'onsoundend', event)
+			this.options.onStatusChange && this.options.onStatusChange('soundend', event)
 		}
-		this.recognition.onsoundstart = event => {
+		this.recognition.onsoundstart = (event: Event) => {
 			this.status = event.type as RecognitionEventType
-			console.log(108, 'onsoundstart', event)
+			this.options.onStatusChange && this.options.onStatusChange('soundstart', event)
 		}
-		this.recognition.onspeechstart = event => {
+		this.recognition.onspeechstart = (event: Event) => {
 			this.status = event.type as RecognitionEventType
-			console.log(109, 'onspeechstart', event)
+			this.options.onStatusChange && this.options.onStatusChange('speechstart', event)
 		}
-		this.recognition.onstart = event => {
+		this.recognition.onstart = (event: Event) => {
 			this.status = event.type as RecognitionEventType
-			console.log(110, 'onstart', event)
+			this.options.onStatusChange && this.options.onStatusChange('start', event)
 		}
 	}
-
-	/**
-	 * get current recognition
-	 *
-	 * @returns result - recognition: SpeechRecognition
-	 */
-	// public getCurrentRecognition(): SpeechRecognition | null {
-	// 	if (!this.recognition) console.warn('no recognition right now')
-	// 	return this.recognition
-	// }
 
 	/**
 	 * Starts the speech recognition service listening to incoming audio with intent to recognize grammars associated with the current SpeechRecognition.
